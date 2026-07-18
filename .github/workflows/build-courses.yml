@@ -169,19 +169,26 @@ jobs:
           repo=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
           ghcr="ghcr.io/${owner}/${repo}/course-${NAME}"
 
-          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$ACTOR" --password-stdin
-          # push the apko rootfs to GHCR at its own content digest (permanent, dedup'd)
-          skopeo copy --preserve-digests \
-            "oci-archive:pipeline/build/${NAME}/oci.tar:v86guest/${NAME}:latest" \
-            "docker://${ghcr}:${ROOTFS_SHORT}"
-
-          # the .img is the browser-served artifact -> GitHub Release (Range-capable URL)
+          # 1. The .img is the artifact students actually boot -> create the Release
+          #    FIRST, so a GHCR hiccup can never block it. Its URL supports HTTP
+          #    Range (async: true). The apko rootfs digest is recorded in the .json.
           gh release create "$tag" \
             "pipeline/registry/images/${HEX}.img" \
             "pipeline/registry/images/${HEX}.json" \
             "pipeline/courses/${NAME}.lock.json" \
             --title "Course image: ${NAME} (${SHORT})" \
-            --notes "image id \`${IMAGE_ID}\` (rootfs + last-mile). Rootfs: \`${ghcr}:${ROOTFS_SHORT}\` = \`${ROOTFS_DIGEST}\`.
+            --notes "image id \`${IMAGE_ID}\` (rootfs + last-mile); apko rootfs digest \`${ROOTFS_DIGEST}\`.
           v86 \`hda\` URL: this release's \`${HEX}.img\` asset (supports HTTP Range for \`async: true\`)."
+
+          # 2. Mirror the apko rootfs to GHCR (best-effort; the Release is the
+          #    source of truth). apko writes a docker-loadable tar, so the correct
+          #    skopeo transport is docker-archive: (not oci-archive:).
+          if printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$ACTOR" --password-stdin; then
+            skopeo copy "docker-archive:pipeline/build/${NAME}/oci.tar" \
+              "docker://${ghcr}:${ROOTFS_SHORT}" \
+              || echo "::warning::GHCR rootfs push failed (Release still published)"
+          else
+            echo "::warning::GHCR login failed (Release still published)"
+          fi
 
           echo "published $NAME image ${IMAGE_ID}"
