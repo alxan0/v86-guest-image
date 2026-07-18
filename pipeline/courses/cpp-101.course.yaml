@@ -1,4 +1,4 @@
-# Course image spec — the ONLY file a course author writes.
+# Course image spec - the ONLY file a course author writes.
 #
 # The platform turns this into a reproducible Alpine i386 rootfs (via apko) and
 # then a v86-bootable .img. Authors declare *what their course needs*; the base
@@ -6,7 +6,7 @@
 #
 # Everything that affects the image bytes goes through `packages` + `branch`,
 # which together produce the content-addressed image digest (the dedup key).
-# `runtime:` is v86 configuration only — it changes no image bytes and is NOT
+# `runtime:` is v86 configuration only - it changes no image bytes and is NOT
 # part of the digest.
 
 name: cpp-101

@@ -1,5 +1,5 @@
 # Builds a v86-bootable image for every course spec that changed in the push,
-# verifies it boots, and publishes it — keyed by the apko content digest, so an
+# verifies it boots, and publishes it - keyed by the apko content digest, so an
 # already-published digest is never rebuilt.
 #
 # GitHub does NOT run any of this automatically until this file exists in
@@ -7,7 +7,7 @@
 # triggers a build for just that course.
 #
 # SECURITY: no `${{ }}` expression is ever interpolated into a `run:` script.
-# Everything crosses into shell via `env:` and is referenced as "$VAR" — so a
+# Everything crosses into shell via `env:` and is referenced as "$VAR" - so a
 # hostile course *filename* (e.g. `a";id;".course.yaml`) is data, never code.
 # This matters because the roadmap is teacher-submitted courses; the day this
 # gains a pull_request trigger, unquoted interpolation would be remote RCE.
@@ -92,7 +92,7 @@ jobs:
 
       # podman (rootless) keeps bind-mounted build outputs owned by the runner
       # user; skopeo pushes the apko image to GHCR preserving its digest.
-      # linux/386 runs natively on the amd64 runner — no qemu needed.
+      # linux/386 runs natively on the amd64 runner - no qemu needed.
       - name: Install podman + skopeo
         run: sudo apt-get update && sudo apt-get install -y podman skopeo
 
@@ -109,8 +109,8 @@ jobs:
           bash pipeline/bin/build-course.sh "$COURSE"
           # name = the slug gen-apko already validated (/^[a-z0-9][a-z0-9._-]*$/)
           name=$(grep -E '^name:' "$COURSE" | head -1 | sed -E 's/^name:[[:space:]]*//; s/["'\'' ]//g')
-          # authoritative identifiers written by build-course.sh — no ls -t guessing.
-          # image_id = identity of the .img bytes (rootfs ⊕ last-mile); rootfs_digest
+          # authoritative identifiers written by build-course.sh - no ls -t guessing.
+          # image_id = identity of the .img bytes (rootfs + last-mile); rootfs_digest
           # = the apko OCI digest we push to GHCR.
           image_id=$(cat "pipeline/build/${name}/image_id")     # sha256:...
           rootfs_digest=$(cat "pipeline/build/${name}/digest")  # sha256:...
@@ -156,7 +156,7 @@ jobs:
           set -euo pipefail
           tag="image-${SHORT}"
           if gh release view "$tag" >/dev/null 2>&1; then
-            echo "image $IMAGE_ID already published as release $tag — skipping (never rebuild)."
+            echo "image $IMAGE_ID already published as release $tag - skipping (never rebuild)."
             exit 0
           fi
 
@@ -176,7 +176,7 @@ jobs:
             "pipeline/registry/images/${HEX}.json" \
             "pipeline/courses/${NAME}.lock.json" \
             --title "Course image: ${NAME} (${SHORT})" \
-            --notes "image id \`${IMAGE_ID}\` (rootfs ⊕ last-mile). Rootfs: \`${ghcr}:${ROOTFS_SHORT}\` = \`${ROOTFS_DIGEST}\`.
+            --notes "image id \`${IMAGE_ID}\` (rootfs + last-mile). Rootfs: \`${ghcr}:${ROOTFS_SHORT}\` = \`${ROOTFS_DIGEST}\`.
           v86 \`hda\` URL: this release's \`${HEX}.img\` asset (supports HTTP Range for \`async: true\`)."
 
           echo "published $NAME image ${IMAGE_ID}"

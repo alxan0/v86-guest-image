@@ -7,7 +7,7 @@
 //
 // Marker scheme: each command is followed by `echo "MA""RK<n>z"`. The command
 // text ("echo \"MA\"\"RK5z\"") never contains the output token ("MARK5z"), so
-// waiting for the token can't false-match the terminal's input echo — no stty
+// waiting for the token can't false-match the terminal's input echo - no stty
 // games needed, timings are honest.
 
 import { readFileSync } from "node:fs";
@@ -33,7 +33,7 @@ function resolveV86() {
       return { moduleUrl: pathToFileURL(req.resolve("v86")).href, wasm: req.resolve("v86/build/v86.wasm") };
     } catch {}
   }
-  throw new Error("cannot resolve v86 — run npm install");
+  throw new Error("cannot resolve v86 - run npm install");
 }
 
 const { moduleUrl, wasm } = resolveV86();
@@ -87,7 +87,7 @@ const check = (label, pass, detail) => checks.push({ label, pass, detail });
 try {
   const tStart = Date.now();
   await waitFor("C/C++ lab", BOOT_MS); // MOTD => autologin reached the shell
-  t("boot → passwordless root shell", Date.now() - tStart);
+  t("boot -> passwordless root shell", Date.now() - tStart);
   // settle the prompt, then turn off terminal echo so captured output is clean
   await step("true", 15000);
   await step("stty -echo", 15000);
@@ -96,7 +96,7 @@ try {
   const id = await step("id -un");
   check("autologin as root (no login/password)", /root/.test(id.out), id.out.trim());
 
-  // writable root — this is the ro-vs-rw landmine
+  // writable root - this is the ro-vs-rw landmine
   const mnt = await step("grep ' / ' /proc/mounts");
   const rootRW = /\/dev\/\S+ \/ ext4 rw/.test(mnt.out) || / \/ ext4 rw,/.test(mnt.out);
   check("root filesystem mounted rw (not ro)", rootRW, mnt.out.trim());
@@ -109,7 +109,7 @@ try {
   const elf = await step("head -c5 /usr/bin/gcc | od -An -tx1");
   check("gcc is ELFCLASS32 (byte 5 == 01)", /7f 45 4c 46 01/.test(elf.out), elf.out.trim());
 
-  // network isolation — no NIC configured; only loopback must exist
+  // network isolation - no NIC configured; only loopback must exist
   const nets = await step("ls /sys/class/net");
   const onlyLo = nets.out.split(/\s+/).filter(Boolean).join(",") === "lo";
   check("no network device (only lo)", onlyLo, nets.out.trim());

@@ -18,7 +18,7 @@ Notably:
 
 If you **distribute** a generated `.img` (e.g. serving it from a CDN to
 browsers), you are distributing GPL/LGPL software and take on those licenses'
-obligations — principally offering the corresponding source. In practice this is
+obligations - principally offering the corresponding source. In practice this is
 easy to satisfy: every package is an unmodified Alpine `apk`, and the exact
 versions are pinned in the course's committed `courses/<name>.lock.json` (name,
 version, and upstream URL per package), which is your bill of materials. Each

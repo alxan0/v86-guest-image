@@ -1,5 +1,5 @@
 // Phase-2: boot once, snapshot the post-boot VM (save_state), then measure how
-// fast restore_state wakes it to a usable prompt — and confirm gcc still works.
+// fast restore_state wakes it to a usable prompt - and confirm gcc still works.
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -26,14 +26,14 @@ let serial = "";
 const mkWait = () => (n, ms) => new Promise((res, rej) => { const s = Date.now(); const iv = setInterval(() => { if (serial.includes(n)) { clearInterval(iv); res(); } else if (Date.now() - s > ms) { clearInterval(iv); rej(new Error("timeout " + n)); } }, 30); });
 
 // ---------- 1. boot + snapshot ----------
-console.log("[snap] booting to shell to take the snapshot…");
+console.log("[snap] booting to shell to take the snapshot...");
 let em = new V86({ ...cfg(), hda: { buffer: diskBuf() } });
 em.add_listener("serial0-output-byte", (x) => (serial += String.fromCharCode(x)));
 let waitFor = mkWait();
 const tBoot0 = Date.now();
 await waitFor("C/C++ lab", 240000);
 const bootMs = Date.now() - tBoot0;
-console.log(`[snap] booted in ${(bootMs / 1000).toFixed(1)}s; dropping page cache to shrink the snapshot…`);
+console.log(`[snap] booted in ${(bootMs / 1000).toFixed(1)}s; dropping page cache to shrink the snapshot...`);
 em.serial0_send("sync; echo 3 > /proc/sys/vm/drop_caches\n");
 await new Promise((r) => setTimeout(r, 2500));
 const state = await em.save_state();
@@ -50,7 +50,7 @@ console.log(zstdLine);
 writeFileSync("/tmp/state.bin", raw);
 
 // ---------- 2. restore + measure wake-to-prompt ----------
-console.log(`\n[snap] restoring from snapshot…`);
+console.log(`\n[snap] restoring from snapshot...`);
 serial = "";
 const tR0 = Date.now();
 em = new V86({ ...cfg(), hda: { buffer: diskBuf() }, initial_state: { buffer: raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength) } });
@@ -63,7 +63,7 @@ const loadedMs = Date.now() - tR0;
 em.serial0_send('echo WOKE_"UP"_MARK\n');
 await waitFor("WOKE_UP_MARK", 60000);
 const restoreMs = Date.now() - tR0;
-console.log(`[snap] state loaded: ${(loadedMs / 1000).toFixed(2)}s;  restore → responsive prompt: ${(restoreMs / 1000).toFixed(2)}s`);
+console.log(`[snap] state loaded: ${(loadedMs / 1000).toFixed(2)}s;  restore -> responsive prompt: ${(restoreMs / 1000).toFixed(2)}s`);
 
 // ---------- 3. verify gcc still works after restore ----------
 serial = "";
@@ -77,9 +77,9 @@ console.log(`[snap] post-restore gcc compile+run: OK (${((Date.now() - tG) / 100
 await em.destroy();
 
 console.log(`\n================ PHASE 2 RESULT ================`);
-console.log(`  cold boot → shell:          ${(bootMs / 1000).toFixed(1)} s`);
+console.log(`  cold boot -> shell:          ${(bootMs / 1000).toFixed(1)} s`);
 console.log(`  snapshot state loaded:      ${(loadedMs / 1000).toFixed(2)} s`);
-console.log(`  snapshot → responsive prompt: ${(restoreMs / 1000).toFixed(2)} s   (${(bootMs / restoreMs).toFixed(0)}x faster than cold boot)`);
+console.log(`  snapshot -> responsive prompt: ${(restoreMs / 1000).toFixed(2)} s   (${(bootMs / restoreMs).toFixed(0)}x faster than cold boot)`);
 console.log(`  snapshot ship size (gzip):  ${(gz.length / 1048576).toFixed(1)} MiB  (raw ${(raw.length / 1048576).toFixed(0)} MiB, mem=${MEM / 1048576} MiB)`);
 console.log(`  gcc works after restore:    yes`);
 process.exit(0);

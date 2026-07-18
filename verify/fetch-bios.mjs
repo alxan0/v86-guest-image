@@ -1,4 +1,4 @@
-// fetch-bios.mjs — obtain the SeaBIOS + VGA BIOS blobs the v86 verify harness
+// fetch-bios.mjs - obtain the SeaBIOS + VGA BIOS blobs the v86 verify harness
 // needs, from a PINNED v86 commit, verified by SHA-256.
 //
 // The v86 npm package deliberately does NOT ship these (they're LGPL BIOS
@@ -37,7 +37,7 @@ export async function ensureBios(dir = resolve(HERE, "bios")) {
     if (existsSync(dest) && sha256(readFileSync(dest)) === want) {
       continue; // already present and valid
     }
-    process.stderr.write(`[fetch-bios] downloading ${name} @ ${V86_REF.slice(0, 12)}…\n`);
+    process.stderr.write(`[fetch-bios] downloading ${name} @ ${V86_REF.slice(0, 12)}...\n`);
     const res = await fetch(urlFor(name));
     if (!res.ok) throw new Error(`fetch ${name}: HTTP ${res.status} ${res.statusText}`);
     const buf = Buffer.from(await res.arrayBuffer());
@@ -51,7 +51,7 @@ export async function ensureBios(dir = resolve(HERE, "bios")) {
   return dir;
 }
 
-// CLI (robust run-as-main check: URL-encoded compare, handles spaces in paths) — B4
+// CLI (robust run-as-main check: URL-encoded compare, handles spaces in paths) - B4
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dir = process.argv[2] ? resolve(process.argv[2]) : resolve(HERE, "bios");
   ensureBios(dir)

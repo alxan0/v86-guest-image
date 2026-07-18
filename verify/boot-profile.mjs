@@ -70,12 +70,12 @@ try {
 
   console.log(`\n================ ATTRIBUTED PHASES ================`);
   const seg = (a, b, label) => { if (a?.t == null || b?.t == null) { console.log(`   --   ${label}`); return; } console.log(`${off(b.t - a.t)}s  ${label}`); };
-  console.log(`${off(firstByteT - t0)}s  v86 start → first serial byte (SeaBIOS/handoff/decompress)`);
-  seg(M[1], M[8], "kernel entry → shell (total in-guest)");
-  seg(M[1], M[4], "  kernel entry → root mounted (kernel init + probe + initramfs)");
-  seg(M[4], M[5], "  root mounted → openrc sysinit");
-  seg(M[5], M[8], "  openrc (sysinit+boot+default) → shell");
-  console.log(`${off(shellT)}s  TOTAL: v86 start → shell`);
+  console.log(`${off(firstByteT - t0)}s  v86 start -> first serial byte (SeaBIOS/handoff/decompress)`);
+  seg(M[1], M[8], "kernel entry -> shell (total in-guest)");
+  seg(M[1], M[4], "  kernel entry -> root mounted (kernel init + probe + initramfs)");
+  seg(M[4], M[5], "  root mounted -> openrc sysinit");
+  seg(M[5], M[8], "  openrc (sysinit+boot+default) -> shell");
+  console.log(`${off(shellT)}s  TOTAL: v86 start -> shell`);
   if (lastK) console.log(`\nkernel's last internal timestamp: [${lastK.kt}] (kernel spent ~${lastK.kt}s before handing to userspace-ish)`);
 
   await emulator.destroy(); process.exit(0);

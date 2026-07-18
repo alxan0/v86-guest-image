@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-image.sh — headless v86 boot + toolchain smoke test for a published image.
+# verify-image.sh - headless v86 boot + toolchain smoke test for a published image.
 #
 #   bin/verify-image.sh <sha256-digest-or-path-to.img>
 #

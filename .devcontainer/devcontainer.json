@@ -4,7 +4,7 @@
   "workspaceFolder": "/workspace",
 
   // Nested podman needs these. On a ROOTLESS podman host (the intended setup),
-  // this "privileged" container is still confined to your user namespace — it
+  // this "privileged" container is still confined to your user namespace - it
   // cannot gain real host root. The point is isolating the Node/npm toolchain:
   // no host container socket is exposed, so a malicious package is boxed in
   // here, not running against your host engine or home directory.

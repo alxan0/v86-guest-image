@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# build-course.sh — one course spec  ->  a published, content-addressed image.
+# build-course.sh - one course spec  ->  a published, content-addressed image.
 #
-#   generate apko.yaml  →  apko lock  →  apko build  →  image digest
-#     →  (dedup: skip if that digest already exists)  →  last-mile .img
-#     →  publish images/<digest>.{img,json}
+#   generate apko.yaml  ->  apko lock  ->  apko build  ->  image digest
+#     ->  (dedup: skip if that digest already exists)  ->  last-mile .img
+#     ->  publish images/<digest>.{img,json}
 #
 # Design rules enforced here:
 #   * the apko IMAGE DIGEST is the identity + dedup key
-#   * an existing digest is NEVER rebuilt — only new digests are added
+#   * an existing digest is NEVER rebuilt - only new digests are added
 #   * runtime config + headroom are metadata, not digest inputs
 #
 # Usage: bin/build-course.sh courses/<course>.course.yaml
@@ -24,7 +24,7 @@ SPEC="$(cd "$(dirname "$SPEC_ARG")" && pwd)/$(basename "$SPEC_ARG")"
 
 cd "$PIPELINE"
 
-# Pinned by digest: apko's version is part of the reproducibility contract — a
+# Pinned by digest: apko's version is part of the reproducibility contract - a
 # moving :latest can change the output image digest. Bump deliberately (and if
 # Chainguard GCs this digest, that's a conscious bump, like updating a lock).
 APKO_IMAGE="${APKO_IMAGE:-cgr.dev/chainguard/apko@sha256:79bcdb7a9a418056a8b416153b4aaacb36bbe1e97f7b20ae3cf7c6838c2a5a9d}" # was :latest
@@ -71,7 +71,7 @@ apko build --arch 386 --build-date "$BUILD_DATE" \
   --sbom-path "$REL" \
   "$REL/apko.yaml" "v86guest/$NAME:latest" "$REL/oci.tar"
 
-# The image digest is the identity. Pull it from apko's OCI index — selecting the
+# The image digest is the identity. Pull it from apko's OCI index - selecting the
 # 386 IMAGE manifest explicitly (not manifests[0]), so a future apko that also
 # attaches an SBOM/attestation manifest can't hand us the wrong digest (B2).
 # The tar path is passed as argv, not spliced into the JS string.
@@ -104,14 +104,14 @@ LM_HASH="$(printf 'lastmile=%s;headroom=%s;epoch=%s;snapshot=%s' \
 IMAGE_ID="$(printf '%s+%s' "$SHORT" "$LM_HASH" | sha256sum | cut -d' ' -f1)"
 echo "$DIGEST"          > "$WORK/digest"     # apko rootfs digest (for GHCR push)
 echo "sha256:$IMAGE_ID" > "$WORK/image_id"   # the .img identity (dedup + Release)
-echo "    image id (rootfs ⊕ last-mile): sha256:$IMAGE_ID"
+echo "    image id (rootfs + last-mile): sha256:$IMAGE_ID"
 
 IMG="$IMAGES_DIR/$IMAGE_ID.img"
 META="$IMAGES_DIR/$IMAGE_ID.json"
 
-echo "### 4. dedup — never rebuild an existing image id (no force-rebuild override)"
+echo "### 4. dedup - never rebuild an existing image id (no force-rebuild override)"
 if [ -f "$IMG" ] && [ -f "$META" ]; then
-  echo "    ✓ image $IMAGE_ID already published ($(numfmt --to=iec "$(stat -c%s "$IMG")")). Skipping."
+  echo "    OK image $IMAGE_ID already published ($(numfmt --to=iec "$(stat -c%s "$IMG")")). Skipping."
   echo "    (course '$NAME' now references this existing image.)"
   exit 0
 fi
@@ -158,7 +158,7 @@ node -e "
     course_packages: meta.course_packages,
     sbom: 'sbom-386.spdx.json',
     disk_headroom_mb: meta.disk_headroom_mb,
-    // runtime config for v86 — NOT part of the image id:
+    // runtime config for v86 - NOT part of the image id:
     runtime: meta.runtime,
     v86_hda: { url: 'images/$IMAGE_ID.img', size: Number('$BYTES'), async: true },
   };
@@ -168,7 +168,7 @@ node -e "
 cp "$WORK"/sbom-386.spdx.json "$IMAGES_DIR/$IMAGE_ID.sbom.spdx.json" 2>/dev/null || true
 
 echo
-echo "    ✓ published:"
+echo "    OK published:"
 echo "      $IMG ($(numfmt --to=iec "$BYTES"))"
 echo "      $META"
 echo

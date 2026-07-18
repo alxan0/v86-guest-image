@@ -7,7 +7,7 @@
 // Usage:
 //   node verify/boot-test.mjs [path/to/disk.img]
 // v86 is auto-resolved from node_modules and the BIOS is auto-fetched (pinned +
-// checksummed) on first run — no manual setup, no sibling checkouts.
+// checksummed) on first run - no manual setup, no sibling checkouts.
 // Env overrides (all optional):
 //   V86_MODULE  path to v86's libv86.mjs (default: auto-resolve from node_modules)
 //   V86_WASM    path to v86.wasm         (default: alongside V86_MODULE)
@@ -44,7 +44,7 @@ function resolveV86() {
     }
   }
   throw new Error(
-    "cannot resolve the 'v86' package — run `npm install` (see README) or set V86_MODULE",
+    "cannot resolve the 'v86' package - run `npm install` (see README) or set V86_MODULE",
   );
 }
 
@@ -65,7 +65,7 @@ const emulator = new V86({
   bios: { url: resolve(biosDir, "seabios.bin") },
   vga_bios: { url: resolve(biosDir, "vgabios.bin") },
   // exact ArrayBuffer for the file (Buffer.buffer can be a shared pool for small
-  // reads; slice to this file's bytes so v86 never sees neighbour memory) — B3
+  // reads; slice to this file's bytes so v86 never sees neighbour memory) - B3
   hda: { buffer: (() => { const b = readFileSync(diskPath); return b.buffer.slice(b.byteOffset, b.byteOffset + b.byteLength); })() },
   autostart: true,
   disable_speaker: true,
@@ -103,7 +103,7 @@ async function run(cmd, needle, ms = 30000) {
 try {
   log(`disk = ${diskPath}`);
   log(`v86  = ${v86ModuleUrl}`);
-  log("booting… (waiting for serial shell)");
+  log("booting... (waiting for serial shell)");
 
   // MOTD prints "C/C++ lab" once autologin drops us at the bash prompt.
   await waitFor("C/C++ lab", "serial login / MOTD", timeoutMs);
@@ -126,7 +126,7 @@ try {
 
   log("");
   log("========================================");
-  log("PASS — image boots and the toolchain runs");
+  log("PASS - image boots and the toolchain runs");
   log("========================================");
   await emulator.destroy();
   process.exit(0);
