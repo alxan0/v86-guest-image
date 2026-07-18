@@ -62,8 +62,13 @@ jobs:
           elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
             files=$(ls pipeline/courses/*.course.yaml 2>/dev/null || true) # first push: all
           else
-            files=$(git diff --name-only "$BEFORE" "$SHA" -- 'pipeline/courses/*.course.yaml' \
-                    | { grep -E '\.course\.yaml$' || true; })
+            if git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
+              files=$(git diff --name-only "$BEFORE" "$SHA" -- 'pipeline/courses/*.course.yaml' \
+                      | { grep -E '\.course\.yaml$' || true; })
+            else
+              echo "before commit $BEFORE not present in checkout; building all course specs"
+              files=$(ls pipeline/courses/*.course.yaml 2>/dev/null || true)
+            fi
           fi
           # JSON array of existing *.course.yaml paths (ignore deletions)
           json=$(printf '%s\n' "$files" \
