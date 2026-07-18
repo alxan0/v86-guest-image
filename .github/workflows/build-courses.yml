@@ -172,7 +172,7 @@ jobs:
           printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$ACTOR" --password-stdin
           # push the apko rootfs to GHCR at its own content digest (permanent, dedup'd)
           skopeo copy --preserve-digests \
-            "oci-archive:pipeline/build/${NAME}/oci.tar" \
+            "oci-archive:pipeline/build/${NAME}/oci.tar:v86guest/${NAME}:latest" \
             "docker://${ghcr}:${ROOTFS_SHORT}"
 
           # the .img is the browser-served artifact -> GitHub Release (Range-capable URL)
