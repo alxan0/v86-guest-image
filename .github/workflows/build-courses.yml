@@ -1,0 +1,182 @@
+# Builds a v86-bootable image for every course spec that changed in the push,
+# verifies it boots, and publishes it — keyed by the apko content digest, so an
+# already-published digest is never rebuilt.
+#
+# GitHub does NOT run any of this automatically until this file exists in
+# .github/workflows/. Once it's here, pushing a new/edited pipeline/courses/*.yaml
+# triggers a build for just that course.
+#
+# SECURITY: no `${{ }}` expression is ever interpolated into a `run:` script.
+# Everything crosses into shell via `env:` and is referenced as "$VAR" — so a
+# hostile course *filename* (e.g. `a";id;".course.yaml`) is data, never code.
+# This matters because the roadmap is teacher-submitted courses; the day this
+# gains a pull_request trigger, unquoted interpolation would be remote RCE.
+name: build-course-images
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "pipeline/courses/**"
+      - "pipeline/bin/**"
+      - "pipeline/lastmile/**"
+      - "pipeline/keys/**"
+      - "verify/**"
+      - ".github/workflows/build-courses.yml"
+  workflow_dispatch:
+    inputs:
+      all:
+        description: "Build every course (still skips digests already published)"
+        type: boolean
+        default: false
+      relock:
+        description: "Re-resolve locks instead of using the committed ones"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # create Releases (the .img lives there)
+  packages: write # push the apko rootfs image to GHCR
+
+jobs:
+  # ---- figure out which course specs to build --------------------------------
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      courses: ${{ steps.list.outputs.courses }}
+      any: ${{ steps.list.outputs.any }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 2 # need the previous commit to diff against
+      - id: list
+        env: # cross into shell as data, never interpolated into the script
+          EVENT: ${{ github.event_name }}
+          ALL: ${{ inputs.all }}
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "workflow_dispatch" ] && [ "$ALL" = "true" ]; then
+            files=$(ls pipeline/courses/*.course.yaml 2>/dev/null || true)
+          elif [ -z "$BEFORE" ] || [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then
+            files=$(ls pipeline/courses/*.course.yaml 2>/dev/null || true) # first push: all
+          else
+            files=$(git diff --name-only "$BEFORE" "$SHA" -- 'pipeline/courses/*.course.yaml' \
+                    | { grep -E '\.course\.yaml$' || true; })
+          fi
+          # JSON array of existing *.course.yaml paths (ignore deletions)
+          json=$(printf '%s\n' "$files" \
+                 | { grep -E '\.course\.yaml$' || true; } \
+                 | while read -r f; do [ -f "$f" ] && printf '%s\n' "$f"; done \
+                 | jq -R . | jq -sc .)
+          echo "courses=$json" >> "$GITHUB_OUTPUT"
+          [ "$json" = "[]" ] && echo "any=false" >> "$GITHUB_OUTPUT" || echo "any=true" >> "$GITHUB_OUTPUT"
+          echo "will build: $json"
+
+  # ---- build + verify + publish one course per matrix leg --------------------
+  build:
+    needs: detect
+    if: needs.detect.outputs.any == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        course: ${{ fromJSON(needs.detect.outputs.courses) }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+
+      # podman (rootless) keeps bind-mounted build outputs owned by the runner
+      # user; skopeo pushes the apko image to GHCR preserving its digest.
+      # linux/386 runs natively on the amd64 runner — no qemu needed.
+      - name: Install podman + skopeo
+        run: sudo apt-get update && sudo apt-get install -y podman skopeo
+
+      - name: Install pipeline deps (for the verify harness)
+        run: npm --prefix pipeline ci || npm --prefix pipeline install
+
+      - name: Build the image (apko -> last-mile), from the committed lock
+        id: build
+        env:
+          COURSE: ${{ matrix.course }} # <- data, quoted below; never in the script text
+          RELOCK: ${{ (github.event_name == 'workflow_dispatch' && inputs.relock) && '1' || '0' }}
+        run: |
+          set -euo pipefail
+          bash pipeline/bin/build-course.sh "$COURSE"
+          # name = the slug gen-apko already validated (/^[a-z0-9][a-z0-9._-]*$/)
+          name=$(grep -E '^name:' "$COURSE" | head -1 | sed -E 's/^name:[[:space:]]*//; s/["'\'' ]//g')
+          # authoritative identifiers written by build-course.sh — no ls -t guessing.
+          # image_id = identity of the .img bytes (rootfs ⊕ last-mile); rootfs_digest
+          # = the apko OCI digest we push to GHCR.
+          image_id=$(cat "pipeline/build/${name}/image_id")     # sha256:...
+          rootfs_digest=$(cat "pipeline/build/${name}/digest")  # sha256:...
+          hex=${image_id#sha256:}
+          rootfs_hex=${rootfs_digest#sha256:}
+          {
+            echo "name=$name"
+            echo "image_id=$image_id"
+            echo "rootfs_digest=$rootfs_digest"
+            echo "hex=$hex"
+            echo "short=${hex:0:12}"
+            echo "rootfs_short=${rootfs_hex:0:12}"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Boot-verify the image in v86 (fails the build if it doesn't boot)
+        env:
+          IMAGE_ID: ${{ steps.build.outputs.image_id }}
+        run: BOOT_TIMEOUT_MS=300000 bash pipeline/bin/verify-image.sh "$IMAGE_ID"
+
+      - name: Upload image as a workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: image-${{ steps.build.outputs.name }}-${{ steps.build.outputs.short }}
+          path: |
+            pipeline/registry/images/${{ steps.build.outputs.hex }}.img
+            pipeline/registry/images/${{ steps.build.outputs.hex }}.json
+          retention-days: 14
+
+      # ---- publish, respecting "never rebuild an existing image id" -----------
+      - name: Publish (skip if this image id is already released)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE_ID: ${{ steps.build.outputs.image_id }}
+          ROOTFS_DIGEST: ${{ steps.build.outputs.rootfs_digest }}
+          HEX: ${{ steps.build.outputs.hex }}
+          NAME: ${{ steps.build.outputs.name }}
+          SHORT: ${{ steps.build.outputs.short }}
+          ROOTFS_SHORT: ${{ steps.build.outputs.rootfs_short }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          tag="image-${SHORT}"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "image $IMAGE_ID already published as release $tag — skipping (never rebuild)."
+            exit 0
+          fi
+
+          owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
+          repo=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
+          ghcr="ghcr.io/${owner}/${repo}/course-${NAME}"
+
+          printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$ACTOR" --password-stdin
+          # push the apko rootfs to GHCR at its own content digest (permanent, dedup'd)
+          skopeo copy --preserve-digests \
+            "oci-archive:pipeline/build/${NAME}/oci.tar" \
+            "docker://${ghcr}:${ROOTFS_SHORT}"
+
+          # the .img is the browser-served artifact -> GitHub Release (Range-capable URL)
+          gh release create "$tag" \
+            "pipeline/registry/images/${HEX}.img" \
+            "pipeline/registry/images/${HEX}.json" \
+            "pipeline/courses/${NAME}.lock.json" \
+            --title "Course image: ${NAME} (${SHORT})" \
+            --notes "image id \`${IMAGE_ID}\` (rootfs ⊕ last-mile). Rootfs: \`${ghcr}:${ROOTFS_SHORT}\` = \`${ROOTFS_DIGEST}\`.
+          v86 \`hda\` URL: this release's \`${HEX}.img\` asset (supports HTTP Range for \`async: true\`)."
+
+          echo "published $NAME image ${IMAGE_ID}"

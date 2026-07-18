@@ -1,0 +1,6 @@
+# build artifacts
+out/
+
+# verify harness deps + auto-fetched BIOS (verify/fetch-bios.mjs re-downloads them)
+node_modules/
+verify/bios/

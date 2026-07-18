@@ -1,0 +1,19 @@
+{
+  "name": "v86-guest-image-pipeline",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Manifest-driven, apko-based builder for v86-bootable Alpine i386 course images",
+  "bin": {
+    "gen-apko": "bin/gen-apko.mjs"
+  },
+  "scripts": {
+    "gen": "node bin/gen-apko.mjs",
+    "fetch-bios": "node ../verify/fetch-bios.mjs",
+    "verify": "bin/verify-image.sh"
+  },
+  "devDependencies": {
+    "js-yaml": "^4.1.0",
+    "v86": "^0.5.424"
+  }
+}

@@ -1,0 +1,34 @@
+# Course image spec — the ONLY file a course author writes.
+#
+# The platform turns this into a reproducible Alpine i386 rootfs (via apko) and
+# then a v86-bootable .img. Authors declare *what their course needs*; the base
+# system + kernel + bootability are added by the platform.
+#
+# Everything that affects the image bytes goes through `packages` + `branch`,
+# which together produce the content-addressed image digest (the dedup key).
+# `runtime:` is v86 configuration only — it changes no image bytes and is NOT
+# part of the digest.
+
+name: cpp-101
+description: Introduction to C++ (gcc/g++, make, gdb, valgrind)
+
+# Alpine release branch. Must be a pinned release (vX.Y). `edge` is rejected.
+branch: v3.20
+
+# Packages this course needs, on top of the platform base (busybox shell,
+# openrc, bash) and kernel. apko resolves transitive deps and pins them at lock.
+packages:
+  - gcc
+  - g++
+  - make
+  - musl-dev
+  - gdb
+  - valgrind
+
+# Free space (MiB) on the writable root for student-created files.
+disk_headroom_mb: 256
+
+# v86 runtime configuration. Does NOT influence the image digest.
+runtime:
+  memory_size_mb: 512
+  vga_memory_size_mb: 8

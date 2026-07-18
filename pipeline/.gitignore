@@ -1,0 +1,13 @@
+node_modules/
+
+# per-course build scratch (apko.yaml + meta are regenerated; rootfs/oci/out are large)
+build/
+
+# local registry stand-in — the real registry is GHCR + GitHub Releases (CI).
+# Nothing here is committed: the .img is huge, and a committed .json would just be
+# an orphan record pointing at a gitignored .img. All of it is reproducible from a
+# build; the authoritative published record is the GitHub Release (I1).
+registry/images/*
+
+# NB: courses/*.course.yaml AND courses/*.lock.json ARE committed on purpose —
+# the lock is the pinned, reproducible input.

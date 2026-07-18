@@ -1,0 +1,14 @@
+{
+  "name": "v86-guest-image",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Build + verify harness for the Alpine i386 C/C++ v86 guest disk image",
+  "scripts": {
+    "fetch-bios": "node verify/fetch-bios.mjs",
+    "verify": "node verify/boot-test.mjs"
+  },
+  "devDependencies": {
+    "v86": "^0.5.424"
+  }
+}

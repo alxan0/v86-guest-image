@@ -1,0 +1,32 @@
+{
+  "name": "guest-image (podman-in-podman)",
+  "build": { "dockerfile": "Dockerfile" },
+  "workspaceFolder": "/workspace",
+
+  // Nested podman needs these. On a ROOTLESS podman host (the intended setup),
+  // this "privileged" container is still confined to your user namespace — it
+  // cannot gain real host root. The point is isolating the Node/npm toolchain:
+  // no host container socket is exposed, so a malicious package is boxed in
+  // here, not running against your host engine or home directory.
+  "runArgs": ["--privileged", "--security-opt", "label=disable"],
+
+  // Persist the NESTED podman's image store across rebuilds (and give it a
+  // native-overlay filesystem instead of overlay-on-overlay). This is where the
+  // apko image, i386/alpine, and the assembler image are cached.
+  "mounts": [
+    "source=guest-image-podman-storage,target=/var/lib/containers,type=volume"
+  ],
+
+  // root here == your unprivileged host user (rootless uid-mapping), so the
+  // bind-mounted workspace stays writable and nested podman runs cleanly.
+  "remoteUser": "root",
+
+  // Install both Node projects' deps inside the container (never on the host).
+  "postCreateCommand": "npm install && npm --prefix pipeline install",
+
+  "customizations": {
+    "vscode": {
+      "extensions": ["redhat.vscode-yaml", "dbaeumer.vscode-eslint", "esbenp.prettier-vscode"]
+    }
+  }
+}
