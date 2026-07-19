@@ -36,10 +36,10 @@ IMAGES_DIR="$REGISTRY_DIR/images"
 BUILD_DATE="${BUILD_DATE:-2020-01-01T00:00:00Z}"
 # Fixed epoch => byte-reproducible last-mile filesystems (mke2fs/mkfs.fat honour it).
 SOURCE_DATE_EPOCH="${SOURCE_DATE_EPOCH:-1577836800}" # 2020-01-01T00:00:00Z
-# Snapshot format/version, folded into the image identity (Phase 0). Bumping it
-# changes every image id, so a new snapshot recipe becomes a *new* image (never a
-# silent rebuild of an existing id). "none" = no boot snapshot shipped yet.
-SNAPSHOT_VERSION="${SNAPSHOT_VERSION:-none}"
+# Snapshot format/version, folded into the image identity. Bumping it changes
+# every image id, so a new snapshot recipe becomes a *new* image (never a silent
+# rebuild of an existing id). "v1" = ships a tested boot snapshot (save_state).
+SNAPSHOT_VERSION="${SNAPSHOT_VERSION:-v1}"
 mkdir -p "$IMAGES_DIR"
 
 # apko runs in a container; mount the pipeline dir as its workdir so it sees
@@ -96,11 +96,18 @@ echo "    apko rootfs digest: $DIGEST"
 #   - lastmile/{assemble.sh,Dockerfile}: kernel cmdline, init config, disk layout,
 #     strip logic, AND the mke2fs/mkfs.fat/syslinux tool versions
 #   - per-course disk params (headroom)
-#   - the snapshot format/version
+#   - the snapshot format/version AND memory_size: a boot snapshot is a freeze of
+#     a VM with a specific RAM size; restoring it into a differently-sized VM is
+#     invalid. memory_size is otherwise "runtime config" (it does NOT change the
+#     .img bytes), but it DOES change which snapshot is valid, so it must be part
+#     of the (image + snapshot) identity. Two courses with identical packages but
+#     different memory_size therefore get distinct image ids (and distinct
+#     snapshots), even though their .img bytes are identical.
 HEADROOM_MB="$(node -e "console.log(require('./$WORK/course-meta.json').disk_headroom_mb)")"
+MEMORY_MB="$(node -e "console.log(require('./$WORK/course-meta.json').runtime.memory_size_mb)")"
 LASTMILE_DIGEST="$(cat lastmile/assemble.sh lastmile/Dockerfile | sha256sum | cut -d' ' -f1)"
-LM_HASH="$(printf 'lastmile=%s;headroom=%s;epoch=%s;snapshot=%s' \
-  "$LASTMILE_DIGEST" "$HEADROOM_MB" "$SOURCE_DATE_EPOCH" "$SNAPSHOT_VERSION" | sha256sum | cut -d' ' -f1)"
+LM_HASH="$(printf 'lastmile=%s;headroom=%s;epoch=%s;snapshot=%s;mem=%s' \
+  "$LASTMILE_DIGEST" "$HEADROOM_MB" "$SOURCE_DATE_EPOCH" "$SNAPSHOT_VERSION" "$MEMORY_MB" | sha256sum | cut -d' ' -f1)"
 IMAGE_ID="$(printf '%s+%s' "$SHORT" "$LM_HASH" | sha256sum | cut -d' ' -f1)"
 echo "$DIGEST"          > "$WORK/digest"     # apko rootfs digest (for GHCR push)
 echo "sha256:$IMAGE_ID" > "$WORK/image_id"   # the .img identity (dedup + Release)
@@ -147,7 +154,7 @@ node -e "
   const out={
     image_id: 'sha256:$IMAGE_ID',          // identity of THESE .img bytes (rootfs + last-mile)
     rootfs_digest: '$DIGEST',              // apko OCI digest (the GHCR-pushed rootfs)
-    last_mile: { assemble_and_tools_sha256: '$LASTMILE_DIGEST', source_date_epoch: Number('$SOURCE_DATE_EPOCH'), snapshot_version: '$SNAPSHOT_VERSION' },
+    last_mile: { assemble_and_tools_sha256: '$LASTMILE_DIGEST', source_date_epoch: Number('$SOURCE_DATE_EPOCH'), snapshot_version: '$SNAPSHOT_VERSION', memory_size_mb: Number('$MEMORY_MB') },
     image: '$IMAGE_ID.img',
     bytes: Number('$BYTES'),
     built_at: new Date().toISOString(),

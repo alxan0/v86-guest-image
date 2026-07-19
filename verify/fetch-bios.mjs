@@ -51,7 +51,7 @@ export async function ensureBios(dir = resolve(HERE, "bios")) {
   return dir;
 }
 
-// CLI (robust run-as-main check: URL-encoded compare, handles spaces in paths) - B4
+// CLI: run-as-main check by URL-encoded compare, so paths with spaces still match (B4)
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const dir = process.argv[2] ? resolve(process.argv[2]) : resolve(HERE, "bios");
   ensureBios(dir)

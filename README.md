@@ -1,15 +1,15 @@
 # v86-guest-image
 
-Build **v86-bootable Alpine i386 disk images** with a per-course package set,
-declaratively and reproducibly. A course author lists the packages their lesson
-needs; the pipeline turns that into a content-addressed, deduplicated `.img` that
-boots in a browser tab (via [v86](https://github.com/copy/v86)) straight into a
-passwordless root shell over the serial console - no backend at runtime.
+Build **v86-bootable Alpine i386 disk images**, one per course. A course author
+lists the packages their lesson needs, and the pipeline turns that into a
+content-addressed, deduplicated `.img` that boots in a browser tab (via
+[v86](https://github.com/copy/v86)) straight into a passwordless root shell over
+the serial console. No backend at runtime.
 
-It's built for a client-side coding-education platform: image builds happen once
-per unique package set at course-publish time (cost scales with teachers), and
-students just fetch a static `.img` (cost scales with students, but it's a CDN
-GET). Zero runtime backend is the whole point.
+That last part is the whole point. It's built for a client-side coding-education
+platform, so image builds happen once per unique package set at course-publish
+time (cost scales with teachers), and students fetch a static `.img` (cost scales
+with students, but it's a CDN GET).
 
 The real system lives in **[`pipeline/`](pipeline/)** - start there.
 

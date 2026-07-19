@@ -93,7 +93,7 @@ jobs:
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
-          node-version: "22"
+          node-version: "24"
 
       # podman (rootless) keeps bind-mounted build outputs owned by the runner
       # user; skopeo pushes the apko image to GHCR preserving its digest.
@@ -130,22 +130,65 @@ jobs:
             echo "rootfs_short=${rootfs_hex:0:12}"
           } >> "$GITHUB_OUTPUT"
 
+      # Gate: if this image id already has a Release, do nothing further - never
+      # rebuild, boot-test, or resnapshot an existing image id.
+      - name: Already published?
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHORT: ${{ steps.build.outputs.short }}
+        run: |
+          if gh release view "image-${SHORT}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "image-${SHORT} already released - skipping verify / snapshot / publish."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Boot-verify the image in v86 (fails the build if it doesn't boot)
+        if: steps.gate.outputs.exists != 'true'
         env:
           IMAGE_ID: ${{ steps.build.outputs.image_id }}
         run: BOOT_TIMEOUT_MS=300000 bash pipeline/bin/verify-image.sh "$IMAGE_ID"
 
-      - name: Upload image as a workflow artifact
+      # Build + acceptance-test the boot snapshot from the EXACT .img we ship.
+      # A snapshot that restores dirty is worse than none, so a failure here fails
+      # the whole release (all-or-nothing: never an .img without a good snapshot).
+      - name: Build + test the boot snapshot (save_state)
+        id: snapshot
+        if: steps.gate.outputs.exists != 'true'
+        env:
+          HEX: ${{ steps.build.outputs.hex }}
+          IMAGE_ID: ${{ steps.build.outputs.image_id }}
+          NAME: ${{ steps.build.outputs.name }}
+        run: |
+          set -euo pipefail
+          mem=$(node -e "console.log(require('./pipeline/build/${NAME}/course-meta.json').runtime.memory_size_mb)")
+          img="pipeline/registry/images/${HEX}.img"
+          zst="pipeline/registry/images/${HEX}.state.zst"
+          # build-snapshot.mjs boots the img, snapshots it, then restores from the
+          # compressed artifact and runs the acceptance sequence; non-zero on any fail.
+          meta=$(MEM_MB="$mem" SOURCE_IMAGE_ID="$IMAGE_ID" node verify/build-snapshot.mjs "$img" "$zst" \
+                 | sed -n 's/^BUILD_SNAPSHOT_META=//p')
+          test -n "$meta" || { echo "snapshot produced no metadata"; exit 1; }
+          printf '%s\n' "$meta" > "pipeline/registry/images/${HEX}.snapmeta.json"
+          echo "snapshot ok: $(printf '%s' "$meta" | node -e "const m=JSON.parse(require('fs').readFileSync(0));console.log(Math.round(m.zstd_bytes/1048576)+' MiB zstd, restore '+(m.restore_to_prompt_ms/1000).toFixed(2)+'s')")"
+
+      - name: Upload image + snapshot as a workflow artifact
+        if: steps.gate.outputs.exists != 'true'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: image-${{ steps.build.outputs.name }}-${{ steps.build.outputs.short }}
           path: |
             pipeline/registry/images/${{ steps.build.outputs.hex }}.img
+            pipeline/registry/images/${{ steps.build.outputs.hex }}.state.zst
             pipeline/registry/images/${{ steps.build.outputs.hex }}.json
+            pipeline/registry/images/${{ steps.build.outputs.hex }}.snapmeta.json
           retention-days: 14
 
       # ---- publish, respecting "never rebuild an existing image id" -----------
       - name: Publish (skip if this image id is already released)
+        if: steps.gate.outputs.exists != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           IMAGE_ID: ${{ steps.build.outputs.image_id }}
@@ -168,19 +211,78 @@ jobs:
           owner=$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')
           repo=$(printf '%s' "$REPO" | tr '[:upper:]' '[:lower:]')
           ghcr="ghcr.io/${owner}/${repo}/course-${NAME}"
+          base="https://github.com/${owner}/${repo}/releases/download/${tag}"
 
-          # 1. The .img is the artifact students actually boot -> create the Release
-          #    FIRST, so a GHCR hiccup can never block it. Its URL supports HTTP
-          #    Range (async: true). The apko rootfs digest is recorded in the .json.
+          # 1. Build the per-release pairing manifest (image + snapshot URLs +
+          #    digests + memory_size + source_image_id). The frontend uses this to
+          #    refuse a snapshot whose source_image_id != the image it booted.
+          #    Assert that pairing here too, as defense in depth.
+          BASE="$base" TAG="$tag" node -e '
+            const fs=require("fs"), crypto=require("crypto");
+            const hex=process.env.HEX, base=process.env.BASE, imageId=process.env.IMAGE_ID;
+            const dir="pipeline/registry/images/";
+            const sha=(f)=>"sha256:"+crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+            const snap=JSON.parse(fs.readFileSync(dir+hex+".snapmeta.json","utf8"));
+            if (snap.source_image_id !== imageId) { console.error("FATAL: snapshot source_image_id "+snap.source_image_id+" != image "+imageId); process.exit(1); }
+            const img=dir+hex+".img", zst=dir+hex+".state.zst";
+            // the snapshot must have been frozen from the EXACT .img bytes we ship
+            const imgSha=sha(img);
+            if (snap.source_image_sha256 !== imgSha) { console.error("FATAL: snapshot froze .img "+snap.source_image_sha256+" but shipping "+imgSha); process.exit(1); }
+            const m={
+              image_id: imageId,
+              memory_size_mb: snap.memory_size_mb,
+              capture_point: snap.capture_point,
+              rootfs_digest: process.env.ROOTFS_DIGEST,
+              image:    { file: hex+".img",       sha256: imgSha,   bytes: fs.statSync(img).size, url: base+"/"+hex+".img" },
+              snapshot: { file: hex+".state.zst", sha256: sha(zst), bytes: fs.statSync(zst).size, raw_bytes: snap.raw_bytes, source_image_id: snap.source_image_id, url: base+"/"+hex+".state.zst" },
+              // ready-to-spread v86 config: hda (async) + initial_state (the snapshot)
+              v86: { memory_size: snap.memory_size_mb*1048576, vga_memory_size: 8*1048576,
+                     hda: { url: base+"/"+hex+".img", size: fs.statSync(img).size, async: true },
+                     initial_state: { url: base+"/"+hex+".state.zst" } },
+            };
+            fs.writeFileSync(dir+hex+".manifest.json", JSON.stringify(m,null,2)+"\n");
+            console.log("manifest ok: image "+m.image.sha256.slice(0,19)+" snapshot "+m.snapshot.sha256.slice(0,19)+" mem "+m.memory_size_mb+"MiB");
+          '
+
+          # 2. Create the Release with BOTH artifacts + the manifest, in one call
+          #    (all-or-nothing: never an .img without its tested snapshot). The
+          #    never-rebuild check above makes re-runs idempotent.
           gh release create "$tag" \
             "pipeline/registry/images/${HEX}.img" \
-            "pipeline/registry/images/${HEX}.json" \
+            "pipeline/registry/images/${HEX}.state.zst" \
+            "pipeline/registry/images/${HEX}.manifest.json" \
             "pipeline/courses/${NAME}.lock.json" \
             --title "Course image: ${NAME} (${SHORT})" \
-            --notes "image id \`${IMAGE_ID}\` (rootfs + last-mile); apko rootfs digest \`${ROOTFS_DIGEST}\`.
-          v86 \`hda\` URL: this release's \`${HEX}.img\` asset (supports HTTP Range for \`async: true\`)."
+            --notes "image id \`${IMAGE_ID}\` (rootfs + last-mile + snapshot v1); apko rootfs digest \`${ROOTFS_DIGEST}\`.
+          Assets: \`${HEX}.img\` (v86 hda, HTTP-Range for async) + \`${HEX}.state.zst\` (boot snapshot, restore ~1s) + \`${HEX}.manifest.json\` (pairing). See the manifest for the exact v86 config."
 
-          # 2. Mirror the apko rootfs to GHCR (best-effort; the Release is the
+          # 3. Prove the UPLOAD: download the assets back off the Release and check
+          #    their digests against the manifest. An upload can truncate or corrupt;
+          #    a pre-upload hash does not catch that, a post-download one does. On any
+          #    mismatch, delete the release so a corrupt one never lingers.
+          vdir=$(mktemp -d)
+          gh release download "$tag" --dir "$vdir" \
+            --pattern "${HEX}.img" --pattern "${HEX}.state.zst" --pattern "${HEX}.manifest.json"
+          if ! VDIR="$vdir" HEX="$HEX" node -e '
+            const fs=require("fs"),crypto=require("crypto"),p=require("path");
+            const d=process.env.VDIR, hex=process.env.HEX;
+            const m=JSON.parse(fs.readFileSync(p.join(d,hex+".manifest.json"),"utf8"));
+            const sha=(f)=>"sha256:"+crypto.createHash("sha256").update(fs.readFileSync(f)).digest("hex");
+            const imgD=sha(p.join(d,hex+".img")), zstD=sha(p.join(d,hex+".state.zst"));
+            let ok=true;
+            if(imgD!==m.image.sha256){console.error("uploaded .img "+imgD+" != manifest "+m.image.sha256);ok=false;}
+            if(zstD!==m.snapshot.sha256){console.error("uploaded .state.zst "+zstD+" != manifest "+m.snapshot.sha256);ok=false;}
+            if(m.snapshot.source_image_id!==m.image_id){console.error("manifest pairing broken");ok=false;}
+            if(!ok) process.exit(1);
+            console.log("uploaded assets verified against manifest: img "+imgD.slice(0,19)+" state "+zstD.slice(0,19));
+          '; then
+            echo "::error::uploaded assets do not match the manifest; deleting release $tag"
+            gh release delete "$tag" --yes --cleanup-tag
+            exit 1
+          fi
+          rm -rf "$vdir"
+
+          # 4. Mirror the apko rootfs to GHCR (best-effort; the Release is the
           #    source of truth). apko writes a docker-loadable tar, so the correct
           #    skopeo transport is docker-archive: (not oci-archive:).
           if printf '%s' "$GH_TOKEN" | skopeo login ghcr.io -u "$ACTOR" --password-stdin; then
